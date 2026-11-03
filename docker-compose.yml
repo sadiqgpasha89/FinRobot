@@ -1,0 +1,24 @@
+# Host ports avoid 5432/8000, which other local projects use.
+name: finrobot
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: finrobot
+      POSTGRES_PASSWORD: finrobot
+      POSTGRES_DB: finrobot
+    ports: ["127.0.0.1:5433:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finrobot"]
+      interval: 5s
+      retries: 12
+  objects:
+    # S3-compatible object store (MinIO no longer publishes container images). Auth is off for local use.
+    image: chrislusf/seaweedfs:latest
+    command: server -s3 -dir=/data -master.volumeSizeLimitMB=256
+    ports: ["127.0.0.1:9000:8333"]
+    volumes: ["objdata:/data"]
+volumes:
+  pgdata:
+  objdata:

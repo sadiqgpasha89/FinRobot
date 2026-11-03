@@ -1,0 +1,34 @@
+@page { size: A4; margin: 18mm 16mm 20mm 16mm;
+  @bottom-left { content: "FinRobot · {{ ticker }} · {{ period }}"; font-size: 7.5pt; color: #7a858f; }
+  @bottom-right { content: "Page " counter(page) " of " counter(pages); font-size: 7.5pt; color: #7a858f; } }
+:root { --teal: #0e8a99; --green: #7aa01c; --ink: #1b1f23; --muted: #5d6872; --rule: #d9dee3; --wash: #f4f8f9; }
+* { box-sizing: border-box; }
+body { font-family: "DejaVu Sans", Helvetica, Arial, sans-serif; font-size: 9.2pt; line-height: 1.5; color: var(--ink); }
+.cover { border-bottom: 3px solid var(--teal); padding-bottom: 10pt; margin-bottom: 14pt; }
+.brand { font-size: 11pt; font-weight: 800; letter-spacing: .02em; } .brand b { color: var(--teal); }
+.cover h1 { font-size: 21pt; margin: 6pt 0 2pt; line-height: 1.15; }
+.cover .sub { color: var(--muted); font-size: 9pt; }
+.kpis { display: flex; gap: 8pt; margin-top: 10pt; }
+.kpi { flex: 1; background: var(--wash); border-left: 3px solid var(--green); padding: 6pt 8pt; }
+.kpi .v { font-size: 13pt; font-weight: 700; } .kpi .l { font-size: 7.5pt; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+h2 { font-size: 12.5pt; color: var(--teal); margin: 16pt 0 5pt; padding-bottom: 3pt; border-bottom: 1px solid var(--rule); break-after: avoid; }
+h2 .n { color: var(--green); margin-right: 5pt; }
+p { margin: 0 0 6pt; } ul { margin: 0 0 6pt 14pt; padding: 0; } li { margin-bottom: 2pt; }
+table.fin { width: 100%; border-collapse: collapse; margin: 0 0 4pt; font-size: 7.6pt; }
+.tblock { margin: 8pt 0 4pt; break-inside: avoid; } .tblock.long { break-inside: auto; }
+.tcap { font-weight: 700; font-size: 8.2pt; color: var(--ink); padding-bottom: 3pt; break-after: avoid; }
+thead { display: table-header-group; } tr { break-inside: avoid; }
+table.fin th { background: var(--teal); color: #fff; font-weight: 600; text-align: right; padding: 3pt 4pt; }
+table.fin th:first-child, table.fin td:first-child { text-align: left; }
+table.fin td { text-align: right; padding: 2.6pt 4pt; border-bottom: 1px solid var(--rule); }
+table.fin tr:nth-child(even) td { background: #fafcfc; }
+.tnote { font-size: 7pt; color: var(--muted); margin: 0 0 7pt; }
+table.fin.text th, table.fin.text td { text-align: left; vertical-align: top; }
+figure { margin: 8pt 0; break-inside: avoid; } figure img { width: 100%; } figcaption { font-size: 7.5pt; color: var(--muted); }
+sup.cite { font-size: 6.2pt; color: var(--teal); font-weight: 600; margin-left: 1pt; }
+.note { background: #fff8e6; border-left: 3px solid #e0a800; padding: 5pt 8pt; font-size: 8pt; margin: 6pt 0; }
+.disclaimer { font-size: 7.4pt; color: var(--muted); border-top: 1px solid var(--rule); margin-top: 14pt; padding-top: 6pt; }
+.appendix h2 { break-before: page; }
+.appendix table.fin td, .appendix table.fin th { font-size: 6.8pt; text-align: left; }
+.appendix .tblock { break-inside: auto; }
+.verify { font-size: 8pt; background: var(--wash); padding: 6pt 8pt; margin-bottom: 8pt; }
