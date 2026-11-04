@@ -1,4 +1,4 @@
-# FinRobot — Build Plan
+# Stack
 
 > **0.2.0 (2026-11-05):** productionised: LangChain gateway, LangGraph subgraphs + checkpointed report graph with human review, Langfuse + LangSmith, hardened API, Docker/CI. Phase 6 tracing/cost is now built. See [docs/](docs/architecture.md), [docs/audit-0.2.0.md](docs/audit-0.2.0.md). The text below is the original plan and 0.1 build status.
 
