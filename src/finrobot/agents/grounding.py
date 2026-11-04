@@ -2,13 +2,17 @@
 this pass asks the figures model (gpt-oss, the fact-check role) which factual sentences the evidence does not support."""
 from __future__ import annotations
 
-import os
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel
 
 from finrobot.agents.context import RunContext
 from finrobot.agents.evaluator import cites_in
-from finrobot.llm.client import parse_json
+from finrobot.config import settings
 
-SCHEMA = {"type": "object", "properties": {"unsupported": {"type": "array", "items": {"type": "string"}}}, "required": ["unsupported"]}
+
+class GroundingOut(BaseModel):
+    unsupported: list[str]
+
 
 SYSTEM = ("You are a strict fact-checker for an equity research note. You get EVIDENCE (verified figures and document passages) "
           "and a DRAFT. List every sentence in the DRAFT that states a fact about the company, its peers, its industry, or the cause "
@@ -20,7 +24,7 @@ SYSTEM = ("You are a strict fact-checker for an equity research note. You get EV
 
 
 def enabled() -> bool:
-    return os.environ.get("FINROBOT_GROUNDING_CHECK", "1") != "0"
+    return settings.grounding_check
 
 
 def evidence_for(ctx: RunContext, text: str) -> str:
@@ -40,10 +44,9 @@ def grounding_check(ctx: RunContext, text: str) -> tuple[str, list[str]]:
     if not enabled() or not text.strip():
         return text, []
     evidence = evidence_for(ctx, text)
-    reply = ctx.llm.chat("figures", [{"role": "system", "content": SYSTEM},
-                                     {"role": "user", "content": f"EVIDENCE:\n{evidence or '(none)'}\n\nDRAFT:\n{text}"}],
-                         schema=SCHEMA, temperature=0)
-    flagged = (parse_json(reply.content) or {}).get("unsupported", [])
+    out = ctx.llm.structured("figures", GroundingOut, [SystemMessage(SYSTEM),
+                                                       HumanMessage(f"EVIDENCE:\n{evidence or '(none)'}\n\nDRAFT:\n{text}")], temperature=0)
+    flagged = out.unsupported if out is not None else []
     removed = []
     for sent in flagged:
         sent = (sent or "").strip()

@@ -10,7 +10,7 @@ from finrobot.tools import charts
 from finrobot.tools.factbook import Fact
 from finrobot.tools.metrics import Metrics, MissingData, period_label, shift
 from finrobot.tools.tables import cell, html_table, money_m
-from finrobot.tools.valuation import Assumptions, YEARS, comps_row, dcf, default_assumptions, project, sensitivity
+from finrobot.tools.valuation import Assumptions, comps_row, dcf, default_assumptions, project, sensitivity
 
 SECTIONS = ["Company Overview", "Thesis and Drivers", "Investment Update", "Financial Summary",
             "Risks and Mitigations", "Valuation", "Financial Projections", "Credit and Cashflow"]
@@ -263,7 +263,7 @@ def _build_valuation(ctx, a: Assumptions, r: dict, sens: dict, vl: SectionData, 
         rows += [["Share price ($)", f"{price_fact.value:.2f}"], ["DCF value vs. price", f"{up:+.1f}%"]]
     vl.tables.append(html_table(["DCF summary", "USD millions unless stated"], rows, "Discounted cash flow"))
     head = ["WACC \\ terminal growth"] + [f"{g * 100:.1f}%" for g in sens["gs"]]
-    srows = [[f"{w * 100:.1f}%"] + [f"{v:.2f}" if v is not None else "—" for v in row] for w, row in zip(sens["waccs"], sens["grid"])]
+    srows = [[f"{w * 100:.1f}%"] + [f"{v:.2f}" if v is not None else "—" for v in row] for w, row in zip(sens["waccs"], sens["grid"], strict=True)]
     vl.tables.append(html_table(head, srows, "Sensitivity: DCF value per share ($)"))
     lo = min(v for row in sens["grid"] for v in row if v is not None)
     hi = max(v for row in sens["grid"] for v in row if v is not None)

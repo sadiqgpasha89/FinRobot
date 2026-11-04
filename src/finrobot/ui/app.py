@@ -7,6 +7,8 @@ import pandas as pd
 import streamlit as st
 
 API = os.environ.get("FINROBOT_API", "http://127.0.0.1:8010")
+API_KEY = os.environ.get("FINROBOT_API_KEY", "")   # one of the server's FINROBOT_API_KEYS, when auth is on
+HEADERS = {"x-api-key": API_KEY} if API_KEY else {}
 st.set_page_config(page_title="FinRobot", page_icon="📈", layout="wide")
 
 TEAL, GREEN = "#0e8a99", "#7aa01c"
@@ -19,7 +21,7 @@ st.markdown(f"""<style>
 
 
 def api(method: str, path: str, **kw):
-    r = httpx.request(method, API + path, timeout=kw.pop("timeout", 30), **kw)
+    r = httpx.request(method, API + path, timeout=kw.pop("timeout", 30), headers=HEADERS, **kw)
     if r.status_code >= 400:
         try:
             detail = r.json().get("detail", r.text)
@@ -55,7 +57,7 @@ def poll(run_id: str, label: str):
                 lines.append(("⚠ " if t == "error" else "") + e["msg"])
         log.markdown("\n\n".join(lines[-12:]))
         if run["status"] != "running":
-            box.update(label=f"{label}: {run['status']}", state="complete" if run["status"] == "done" else "error")
+            box.update(label=f"{label}: {run['status']}", state="complete" if run["status"] in ("done", "awaiting_review") else "error")
             return run
         time.sleep(1.5)
 
@@ -112,7 +114,7 @@ with tab_ask:
             st.markdown(res["answer_md"])
             for name in res.get("artifacts", []):
                 if name.endswith(".png"):
-                    st.image(f"{API}/runs/{rid}/artifacts/{name}")
+                    st.image(httpx.get(f"{API}/runs/{rid}/artifacts/{name}", headers=HEADERS, timeout=60).content)
             st.caption(f"{res['ticker']} {res['period']} · {res['seconds']}s · run {rid}")
         else:
             st.error(run["result"].get("error", "failed") if isinstance(run["result"], dict) else "failed")
@@ -159,7 +161,7 @@ with tab_report:
                     st.write(f"{res['pages']} pages · format check {'passed' if res['format']['ok'] else 'FAILED: ' + '; '.join(res['format']['issues'])} · {res['seconds']}s")
                     for w in res.get("warnings", []):
                         st.warning(w)
-                    pdf = httpx.get(f"{API}/runs/{rid}/artifacts/{res['pdf_name']}", timeout=60).content
+                    pdf = httpx.get(f"{API}/runs/{rid}/artifacts/{res['pdf_name']}", headers=HEADERS, timeout=60).content
                     st.download_button("Download PDF", pdf, file_name=res["pdf_name"], mime="application/pdf", type="primary")
                 else:
                     st.error(run["result"].get("error", "failed") if isinstance(run["result"], dict) else "failed")

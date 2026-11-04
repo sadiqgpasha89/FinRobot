@@ -4,16 +4,16 @@ from __future__ import annotations
 from typing import Callable
 
 from finrobot.data import objects, store
-from finrobot.data.parse import chunk_sections, html_to_text, split_sections
+from finrobot.data.parse import Section, chunk_sections, html_to_text, split_sections
 from finrobot.data.providers.edgar import EdgarClient
 from finrobot.data.xbrl import normalise
-from finrobot.llm.client import OllamaLLM
+from finrobot.llm.gateway import LLMGateway
 
 
 def ingest(query: str, n_10k: int = 1, n_10q: int = 3, n_earnings: int = 3, embed: bool = True,
-           log: Callable[[str], None] = print, edgar: EdgarClient | None = None, llm: OllamaLLM | None = None) -> dict:
+           log: Callable[[str], None] = print, edgar: EdgarClient | None = None, llm: LLMGateway | None = None) -> dict:
     edgar = edgar or EdgarClient()
-    llm = llm or OllamaLLM()
+    llm = llm or LLMGateway()
     store.init_db()
     ticker, cik, name = edgar.resolve(query)
     subs = edgar.submissions(cik)
@@ -43,14 +43,14 @@ def ingest(query: str, n_10k: int = 1, n_10q: int = 3, n_earnings: int = 3, embe
         else:
             docname, raw = edgar.document(cik, f)
         text = html_to_text(raw)
-        sections = split_sections(text, f.form) if f.form != "8-K" else [type("S", (), {"name": "Earnings Release", "text": text})()]
+        sections = split_sections(text, f.form) if f.form != "8-K" else [Section("Earnings Release", text)]
         chunks = chunk_sections(sections)
-        embs = llm.embed([f"search_document: {c.text}" for c in chunks]) if embed else [None] * len(chunks)
+        embs = llm.embed([c.text for c in chunks], "document") if embed else [None] * len(chunks)
         key = f"raw/{ticker}/{f.acc_nodash}/{docname}"
         where = objects.put(key, raw, "text/html")
         url = f"https://www.sec.gov/Archives/edgar/data/{cik}/{f.acc_nodash}/{docname}"
         store.insert_filing(ticker, f.form, f.accession, f.filed, f.report_date, url, where,
-                            [(c.idx, c.section, c.text, e) for c, e in zip(chunks, embs)])
+                            [(c.idx, c.section, c.text, e) for c, e in zip(chunks, embs, strict=True)])
         added += 1
         log(f"  {f.form} {f.filed}: {len(chunks)} chunks ({', '.join(sorted({c.section for c in chunks}))})")
     log(f"done: {added} filings added, {skipped} already present")

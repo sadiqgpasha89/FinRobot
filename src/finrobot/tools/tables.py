@@ -6,6 +6,11 @@ from html import escape
 from finrobot.tools.factbook import Fact
 
 
+class Raw(str):
+    """A table cell that is trusted HTML. Everything else is escaped: risk-table cells come straight from model output, and a cell
+    that merely *started with* '<' used to bypass escaping."""
+
+
 def money_m(v: float | None) -> str:
     """Table cell in USD millions."""
     if v is None:
@@ -33,7 +38,7 @@ def html_table(header: list[str], rows: list[list[str]], caption: str = "", note
     th = "".join(f"<th>{escape(h)}</th>" for h in header)
     body = ""
     for r in rows:
-        tds = "".join(f"<td>{c if isinstance(c, str) and c.startswith('<') else escape(str(c))}</td>" for c in r)
+        tds = "".join(f"<td>{c if isinstance(c, Raw) else escape(str(c))}</td>" for c in r)
         body += f"<tr>{tds}</tr>"
     cap = f"<div class='tcap'>{escape(caption)}</div>" if caption else ""
     foot = f"<p class='tnote'>{escape(notes)}</p>" if notes else ""

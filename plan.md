@@ -1,5 +1,7 @@
 # FinRobot — Build Plan
 
+> **0.2.0 (2026-11-05):** productionised: LangChain gateway, LangGraph subgraphs + checkpointed report graph with human review, Langfuse + LangSmith, hardened API, Docker/CI. Phase 6 tracing/cost is now built. See [docs/](docs/architecture.md), [docs/audit-0.2.0.md](docs/audit-0.2.0.md). The text below is the original plan and 0.1 build status.
+
 > ## Build status (2026-11-02)
 > Phases 0–5 are built and were exercised against a real stack (Postgres+pgvector, S3-compatible store, Ollama with `gpt-oss:20b`, `gemma4:e4b`,
 > `nomic-embed-text`) on WM, RSG and WCN; the Streamlit UI was clicked through end to end. See [README.md](README.md) for usage.

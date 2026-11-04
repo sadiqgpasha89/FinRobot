@@ -87,13 +87,16 @@ class FactBook:
     def to_dict(self) -> dict:
         return {"facts": [asdict(f) for f in self.facts.values()], "passages": [asdict(p) for p in self.passages.values()]}
 
+    def load(self, d: dict) -> "FactBook":
+        """Merge a serialised FactBook into this one, in place (objects holding a reference to it keep working)."""
+        for f in d.get("facts", []):
+            self.facts[f["id"]] = Fact(**f)
+            self._fact_key[(f["label"], round(f["value"], 6), f["unit"], f["source"])] = f["id"]
+        for p in d.get("passages", []):
+            self.passages[p["id"]] = Passage(**p)
+            self._chunk_key[p["chunk_id"]] = p["id"]
+        return self
+
     @classmethod
     def from_dict(cls, d: dict) -> "FactBook":
-        fb = cls()
-        for f in d.get("facts", []):
-            fb.facts[f["id"]] = Fact(**f)
-            fb._fact_key[(f["label"], round(f["value"], 6), f["unit"], f["source"])] = f["id"]
-        for p in d.get("passages", []):
-            fb.passages[p["id"]] = Passage(**p)
-            fb._chunk_key[p["chunk_id"]] = p["id"]
-        return fb
+        return cls().load(d)

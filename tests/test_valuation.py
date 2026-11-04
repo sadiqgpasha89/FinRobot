@@ -1,6 +1,6 @@
 import pytest
 
-from finrobot.tools.valuation import Assumptions, dcf, project, sensitivity, YEARS
+from finrobot.tools.valuation import YEARS, Assumptions, dcf, project, sensitivity
 
 
 def base(**kw):

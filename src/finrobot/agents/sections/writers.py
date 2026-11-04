@@ -4,12 +4,14 @@ from __future__ import annotations
 import re
 import time
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel
+
 from finrobot.agents.context import RunContext
 from finrobot.agents.evaluator import evaluate
 from finrobot.agents.grounding import grounding_check
 from finrobot.agents.qa_agents import checked, evidence_block
-from finrobot.llm.client import parse_json
-from finrobot.report.model import ReportModel, SectionData
+from finrobot.report.model import SectionData
 from finrobot.tools.registry import search_passages
 from finrobot.tools.tables import html_table
 
@@ -80,9 +82,16 @@ def write_section(ctx: RunContext, title: str, sd: SectionData) -> dict:
     return out
 
 
-RISK_SCHEMA = {"type": "object", "properties": {"risks": {"type": "array", "items": {"type": "object", "properties": {
-    "risk": {"type": "string"}, "why_it_matters": {"type": "string"}, "mitigation": {"type": "string"}, "source": {"type": "string"}},
-    "required": ["risk", "why_it_matters", "mitigation", "source"]}}}, "required": ["risks"]}
+class RiskRow(BaseModel):
+    risk: str
+    why_it_matters: str
+    mitigation: str
+    source: str
+
+
+class RisksOut(BaseModel):
+    risks: list[RiskRow]
+
 
 RISK_QUERIES = ["principal risks to the business", "environmental and regulatory liability", "commodity price volatility recycled materials",
                 "inflation labor costs and supply chain", "indebtedness interest rates and credit", "cybersecurity and technology disruption"]
@@ -104,9 +113,8 @@ def write_risks(ctx: RunContext) -> tuple[str, dict]:
               "why_it_matters (one sentence), mitigation (one sentence describing how the company says it manages or offsets that risk, taken from the PASSAGES; "
               "if none is stated write exactly 'None disclosed in the retrieved filings'), and source (the passage id, like S3, that supports the risk). "
               "Use only what the passages say. Do not invent figures.")
-    reply = ctx.llm.chat("narrative", [{"role": "system", "content": system}, {"role": "user", "content": f"PASSAGES:\n{evidence_block(hits, 700)}"}],
-                         schema=RISK_SCHEMA, temperature=0.1)
-    rows = (parse_json(reply.content) or {}).get("risks", [])
+    out = ctx.llm.structured("narrative", RisksOut, [SystemMessage(system), HumanMessage(f"PASSAGES:\n{evidence_block(hits, 700)}")], temperature=0.1)
+    rows = [r.model_dump() for r in out.risks] if out is not None else []
     kept, dropped, prose = [], 0, []
     for r in rows[:6]:
         src = (r.get("source") or "").strip().strip("[]")

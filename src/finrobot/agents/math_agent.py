@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from finrobot.agents.context import RunContext
-from finrobot.llm.client import Tool
+from finrobot.llm.tools import Tool
 from finrobot.tools.calc import CalcError, calc_and_register
 from finrobot.tools.metrics import METRIC_NAMES, MissingData, shift
 

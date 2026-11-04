@@ -6,7 +6,7 @@ from datetime import date
 from typing import Any, Callable
 
 from finrobot.data import store
-from finrobot.llm.client import OllamaLLM
+from finrobot.llm.gateway import LLMGateway
 from finrobot.tools.factbook import FactBook
 from finrobot.tools.metrics import Metrics, period_label
 
@@ -15,7 +15,7 @@ from finrobot.tools.metrics import Metrics, period_label
 class RunContext:
     ticker: str
     name: str
-    llm: OllamaLLM
+    llm: LLMGateway
     fb: FactBook = field(default_factory=FactBook)
     fy: int | None = None            # focus period
     fq: int | None = None
