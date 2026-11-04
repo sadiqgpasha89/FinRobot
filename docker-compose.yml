@@ -1,24 +1,108 @@
-# Host ports avoid 5432/8000, which other local projects use.
+# FinRobot stack:  docker compose up -d
+#   api      FastAPI service (port 8010)        ui   Streamlit (port 8510)
+#   postgres pgvector (facts, chunks, runs, LangGraph checkpoints)      objects  S3-compatible store (raw filings, PDFs)
+# Optional:   --profile ollama            local models in a container (NVIDIA GPU)
+#             -f docker-compose.langfuse.yml   self-hosted Langfuse (see docs/observability.md)
+# Secrets come from .env (copy .env.example). Compose refuses to start with them unset.
 name: finrobot
+
+x-app: &app
+  image: finrobot:${FINROBOT_VERSION:-0.2.0}
+  build: .
+  restart: unless-stopped
+  environment: &app-env
+    FINROBOT_ENV: ${FINROBOT_ENV:-production}
+    SEC_USER_AGENT: ${SEC_USER_AGENT:?set SEC_USER_AGENT, e.g. "FinRobot you@example.com"}
+    DATABASE_URL: postgresql://finrobot:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}@postgres:5432/finrobot
+    S3_ENDPOINT: ${S3_ENDPOINT:-objects:8333}
+    S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+    S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    S3_BUCKET: ${S3_BUCKET:-finrobot}
+    S3_SECURE: ${S3_SECURE:-false}
+    OLLAMA_HOST: ${OLLAMA_HOST:-http://host.docker.internal:11434}
+    FINROBOT_MODEL_FIGURES: ${FINROBOT_MODEL_FIGURES:-gpt-oss:20b}
+    FINROBOT_MODEL_NARRATIVE: ${FINROBOT_MODEL_NARRATIVE:-gemma4:e4b}
+    FINROBOT_EMBED_MODEL: ${FINROBOT_EMBED_MODEL:-nomic-embed-text}
+    FINROBOT_API_KEYS: ${FINROBOT_API_KEYS:?set FINROBOT_API_KEYS (comma separated)}
+    FINROBOT_LLM_CONCURRENCY: ${FINROBOT_LLM_CONCURRENCY:-1}
+    FINROBOT_TRACE_INPUTS: ${FINROBOT_TRACE_INPUTS:-true}
+    LANGFUSE_PUBLIC_KEY: ${LANGFUSE_PUBLIC_KEY:-}
+    LANGFUSE_SECRET_KEY: ${LANGFUSE_SECRET_KEY:-}
+    LANGFUSE_BASE_URL: ${LANGFUSE_BASE_URL:-https://cloud.langfuse.com}
+    LANGSMITH_TRACING: ${LANGSMITH_TRACING:-false}
+    LANGSMITH_API_KEY: ${LANGSMITH_API_KEY:-}
+    LANGSMITH_PROJECT: ${LANGSMITH_PROJECT:-finrobot}
+    ALPHAVANTAGE_API_KEY: ${ALPHAVANTAGE_API_KEY:-}
+  extra_hosts: ["host.docker.internal:host-gateway"]
+  security_opt: ["no-new-privileges:true"]
+  cap_drop: [ALL]
+
 services:
   postgres:
-    image: pgvector/pgvector:pg16
+    image: pgvector/pgvector:0.8.0-pg16
+    restart: unless-stopped
     environment:
       POSTGRES_USER: finrobot
-      POSTGRES_PASSWORD: finrobot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
       POSTGRES_DB: finrobot
-    ports: ["127.0.0.1:5433:5432"]
+    ports: ["127.0.0.1:${POSTGRES_PORT:-5433}:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U finrobot"]
+      test: ["CMD-SHELL", "pg_isready -U finrobot -d finrobot"]
       interval: 5s
-      retries: 12
+      timeout: 3s
+      retries: 20
+
   objects:
-    # S3-compatible object store (MinIO no longer publishes container images). Auth is off for local use.
-    image: chrislusf/seaweedfs:latest
-    command: server -s3 -dir=/data -master.volumeSizeLimitMB=256
-    ports: ["127.0.0.1:9000:8333"]
-    volumes: ["objdata:/data"]
+    # S3-compatible store. Any S3 endpoint works instead: drop this service and set S3_ENDPOINT / S3_SECURE / keys (AWS S3, R2, Garage ...).
+    image: chrislusf/seaweedfs:3.80
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/entrypoint.sh"]
+    environment:
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:?set S3_ACCESS_KEY}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:?set S3_SECRET_KEY}
+    volumes: ["objdata:/data", "./docker/objects-entrypoint.sh:/entrypoint.sh:ro"]
+    ports: ["127.0.0.1:${S3_PORT:-9000}:8333"]
+
+  api:
+    <<: *app
+    depends_on:
+      postgres: {condition: service_healthy}
+    ports: ["${API_BIND:-127.0.0.1}:${API_PORT:-8010}:8010"]
+    volumes: ["appdata:/data"]
+    read_only: true
+    tmpfs: ["/tmp"]
+    stop_grace_period: 40s
+
+  ui:
+    <<: *app
+    command: ["finrobot", "ui", "--port", "8510"]
+    environment:
+      <<: *app-env
+      FINROBOT_API: http://api:8010
+      FINROBOT_API_KEY: ${FINROBOT_UI_API_KEY:?set FINROBOT_UI_API_KEY to one of the FINROBOT_API_KEYS}
+    depends_on:
+      api: {condition: service_healthy}
+    ports: ["${UI_BIND:-127.0.0.1}:${UI_PORT:-8510}:8510"]
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8510/_stcore/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 4
+
+  ollama:
+    profiles: ["ollama"]
+    image: ollama/ollama:0.40.14
+    restart: unless-stopped
+    volumes: ["ollama:/root/.ollama"]
+    ports: ["127.0.0.1:11434:11434"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
+
 volumes:
   pgdata:
   objdata:
+  appdata:
+  ollama:

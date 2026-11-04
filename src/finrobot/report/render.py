@@ -11,10 +11,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from finrobot.agents.context import RunContext
 from finrobot.agents.evaluator import CITE_RE, cites_in
-from finrobot.config import ROOT
+from finrobot.config import TEMPLATES_DIR
 from finrobot.report.model import SECTIONS, ReportModel
 
-TEMPLATES = ROOT / "src" / "finrobot" / "templates"
+TEMPLATES = TEMPLATES_DIR   # inside the package, so it also works from an installed wheel
 _env = Environment(loader=FileSystemLoader(TEMPLATES), autoescape=select_autoescape(["j2"]))
 
 
@@ -26,7 +26,8 @@ def clean_prose(text: str) -> str:
 
 def prose_html(text: str) -> str:
     """Markdown -> HTML with [F#]/[S#] citations turned into superscripts."""
-    html = markdown.markdown(clean_prose(text), extensions=["sane_lists"])
+    # model and filing text is untrusted: escape it so it cannot inject markup (<script>, <img src=http://internal/...>) into the report
+    html = markdown.markdown(escape(clean_prose(text), quote=False), extensions=["sane_lists"])
     return CITE_RE.sub(lambda m: "<sup class='cite'>" + ", ".join(c.strip() for c in re.split(r"[,;]", m.group(1))) + "</sup>", html)
 
 
@@ -92,9 +93,24 @@ def render_html(ctx: RunContext, model: ReportModel, prose: dict[str, str], extr
         warnings=model.warnings, verification=verification, cited_facts=cited_facts, cited_passages=cited_passages)
 
 
+def _fetcher():
+    """The report is self-contained (charts are data: URIs). Refuse every other fetch so a stray URL can never trigger a request (SSRF)."""
+    try:
+        from weasyprint.urls import URLFetcher  # WeasyPrint >= 68
+        return URLFetcher(allowed_protocols={"data"})
+    except ImportError:   # older WeasyPrint takes a plain function
+        from weasyprint import default_url_fetcher
+
+        def fetch(url: str, *a, **kw):
+            if not url.startswith("data:"):
+                raise ValueError(f"external resource blocked while rendering the report: {url[:80]}")
+            return default_url_fetcher(url, *a, **kw)
+        return fetch
+
+
 def to_pdf(html: str) -> tuple[bytes, int]:
     from weasyprint import HTML
-    doc = HTML(string=html).render()
+    doc = HTML(string=html, url_fetcher=_fetcher()).render()
     return doc.write_pdf(), len(doc.pages)
 
 

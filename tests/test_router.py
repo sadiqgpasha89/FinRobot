@@ -1,16 +1,10 @@
 from finrobot.agents.qa_agents import parse_period, route
 
 
-class FakeLLM:
-    def __init__(self, content):
-        self.content = content
-
-    def chat(self, *a, **k):
-        class R:
-            pass
-        r = R()
-        r.content = self.content
-        return r
+def FakeLLM(content):
+    """A real LLMGateway whose 'figures' model replies with `content`."""
+    from fakes import make_gateway
+    return make_gateway(figures=[content])[0]
 
 
 def test_period_parsing_is_done_in_code():
@@ -41,3 +35,13 @@ def test_only_why_questions_run_the_explanation_agents():
         assert wants_explanation(q), q
     for q in ("What is net debt relative to EBITDA?", "What was revenue growth in Q1 year over year?", "How leveraged is WM?"):
         assert not wants_explanation(q), q
+
+
+def test_structured_schemas_require_every_field():
+    """A schema without `required` lets a model omit fields; gpt-oss left `company` out of the router's answer in a live run."""
+    from finrobot.agents.grounding import GroundingOut
+    from finrobot.agents.qa_agents import RouterOut
+    from finrobot.agents.sections.writers import RiskRow, RisksOut
+    for model in (RouterOut, GroundingOut, RisksOut, RiskRow):
+        schema = model.model_json_schema()
+        assert set(schema["required"]) == set(schema["properties"]), model

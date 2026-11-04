@@ -45,7 +45,7 @@ def default_assumptions(m: Metrics, fy: int, fq: int) -> Assumptions:
     and fades toward a long-run rate, margins hold at the trailing level, capex and D&A at trailing ratios."""
     ttm_rev, prior_ttm_rev = m.ttm("revenue", fy, fq), m.ttm("revenue", *shift(fy, fq, -4))
     ttm_ebitda = m._m_ttm_ebitda(fy, fq)
-    ttm_capex, ttm_da, ttm_oi = m.ttm("capex", fy, fq), m.ttm("d_and_a", fy, fq), m.ttm("operating_income", fy, fq)
+    ttm_capex, ttm_da = m.ttm("capex", fy, fq), m.ttm("d_and_a", fy, fq)
     ttm_tax, ttm_pretax = None, None
     try:
         ttm_tax, ttm_pretax = m.ttm("income_tax", fy, fq), m.ttm("pretax_income", fy, fq)

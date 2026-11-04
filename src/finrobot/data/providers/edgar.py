@@ -4,11 +4,12 @@ SEC fair-access rules: a declared User-Agent with contact details and at most 10
 """
 from __future__ import annotations
 
+import json
+import os
 import re
 import threading
 import time
 from dataclasses import dataclass
-from pathlib import Path
 
 import httpx
 
@@ -69,20 +70,22 @@ class EdgarClient:
             return r
         raise EdgarError(f"GET {url}: rate limited")
 
-    def _cached(self, key: str, url: str) -> bytes:
+    def _cached(self, key: str, url: str, max_age: float | None = None) -> bytes:
+        """Download once, keep on disk. `max_age` (seconds) refreshes entries that go stale (the ticker list); filings never change."""
         path = settings.cache_dir / key
-        if path.exists():
+        if path.exists() and (max_age is None or time.time() - path.stat().st_mtime < max_age):
             return path.read_bytes()
         data = self._get(url).content
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(data)
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_bytes(data)
+        os.replace(tmp, path)   # atomic: a crash mid-write must not leave a truncated file that is trusted forever
         return data
 
     # --- identity -----------------------------------------------------------------
     def _ticker_map(self) -> dict:
         if self._tickers is None:
-            import json
-            raw = self._cached("company_tickers.json", "https://www.sec.gov/files/company_tickers.json")
+            raw = self._cached("company_tickers.json", "https://www.sec.gov/files/company_tickers.json", max_age=7 * 86400)
             self._tickers = json.loads(raw)
         return self._tickers
 
@@ -103,11 +106,9 @@ class EdgarClient:
 
     # --- data ---------------------------------------------------------------------
     def submissions(self, cik: int) -> dict:
-        import json
         return json.loads(self._get(f"https://data.sec.gov/submissions/CIK{cik:010d}.json").content)
 
     def company_facts(self, cik: int) -> dict:
-        import json
         return json.loads(self._get(f"https://data.sec.gov/api/xbrl/companyfacts/CIK{cik:010d}.json").content)
 
     def filings(self, cik: int, forms: tuple[str, ...] = ("10-K", "10-Q"), limit: int | None = None,
@@ -128,7 +129,6 @@ class EdgarClient:
 
     def earnings_exhibit(self, cik: int, f: Filing) -> tuple[str, bytes] | None:
         """EX-99.1 of an 8-K with Item 2.02 is the quarterly earnings press release."""
-        import json
         idx = json.loads(self._get(f"https://www.sec.gov/Archives/edgar/data/{cik}/{f.acc_nodash}/index.json").content)
         names = [i["name"] for i in idx.get("directory", {}).get("item", [])]
         for n in names:

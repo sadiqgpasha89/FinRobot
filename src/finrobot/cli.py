@@ -31,33 +31,81 @@ def _echo_event(e: dict) -> None:
         typer.echo(f"  § {e['name']}", err=True)
     elif t == "log":
         typer.echo(f"  {e['msg']}", err=True)
+    elif t == "error":
+        typer.echo(f"error: {e['msg']}", err=True)
+
+
+@app.callback()
+def _main(verbose: bool = typer.Option(False, "--verbose", "-v", help="debug logging")) -> None:
+    from finrobot.config import settings
+    from finrobot.log import setup_logging
+    setup_logging("DEBUG" if verbose else "WARNING" if settings.log_level.upper() == "INFO" else settings.log_level, settings.log_json)
 
 
 @app.command()
 def ping() -> None:
-    """Check Postgres, the object store and Ollama models."""
+    """Check Postgres, the object store, the models and the tracing configuration."""
     from finrobot.config import settings
     from finrobot.data import objects, store
-    from finrobot.llm.client import OllamaLLM
+    from finrobot.llm.gateway import LLMGateway
     ok = True
     try:
         store.init_db()
-        typer.echo("postgres      ok")
+        typer.echo("postgres      ok (migrations applied)")
     except Exception as e:
         ok = False
         typer.echo(f"postgres      FAIL {e}")
-    typer.echo("object store  " + ("ok (s3)" if objects._s3() else "unavailable → local files in output/objects"))
-    try:
-        have = OllamaLLM().installed()
-        for role, m in (("figures", settings.model_figures), ("narrative", settings.model_narrative), ("embed", settings.embed_model)):
-            hit = m in have or f"{m}:latest" in have
-            ok &= hit
-            typer.echo(f"model {role:<9} {m} {'ok' if hit else 'NOT INSTALLED'}")
-    except Exception as e:
-        ok = False
-        typer.echo(f"ollama        FAIL {e}")
+    typer.echo("object store  " + ("ok (s3)" if objects.available() else "unavailable -> local files in output/objects"))
+    health = LLMGateway().health()
+    for k, v in health.items():
+        if k != "ok":
+            typer.echo(f"{k:<13} {v}")
+    ok &= bool(health["ok"])
     typer.echo("sec user-agent " + ("set" if settings.sec_user_agent else "MISSING (set SEC_USER_AGENT in .env)"))
+    typer.echo(f"langfuse      {'enabled' if settings.langfuse_enabled else 'off (set LANGFUSE_PUBLIC_KEY / LANGFUSE_SECRET_KEY)'}")
+    typer.echo(f"langsmith     {'enabled, project ' + settings.langsmith_project if settings.langsmith_enabled else 'off (set LANGSMITH_TRACING=true and LANGSMITH_API_KEY)'}")
+    for p in settings.production_problems() if settings.environment == "production" else []:
+        ok = False
+        typer.echo(f"production    PROBLEM: {p}")
     raise typer.Exit(0 if ok else 1)
+
+
+@app.command()
+def migrate() -> None:
+    """Apply database migrations (also run automatically when the API starts)."""
+    from finrobot.data.migrations import migrate as run
+    applied = run()
+    typer.echo(f"applied: {applied}" if applied else "database is up to date")
+
+
+@app.command()
+def ask(question: str, ticker: str = typer.Option(None, "--ticker", "-t", help="skip company detection")) -> None:
+    """Ask an analyst-style question; Data, Concept and Thesis agents answer with cited figures."""
+    from finrobot import runs, service
+    run_id, emit = runs.new_run("qa", {"question": question, "ticker": ticker}, _echo_event)
+    result = service.run_job(run_id, emit, lambda: service.execute_qa(run_id, emit, question, ticker, flush=True))
+    if result is None:
+        raise typer.Exit(1)
+    typer.echo("\n" + result["answer_md"])
+    ev, u = result["eval"], result.get("usage", {})
+    typer.echo(f"\n— verification: {'PASS' if ev['ok'] else 'FAIL'} · {ev['claims']} figures · {ev['matched_facts']} tied to data · "
+               f"{ev['grounded_in_passages']} grounded in documents · {result['seconds']}s · "
+               f"{u.get('input_tokens', 0)}+{u.get('output_tokens', 0)} tokens · run {run_id}", err=True)
+
+
+@app.command()
+def report(ticker: str, assumptions: Path = typer.Option(None, help="YAML file overriding default projection assumptions"),
+           peers: str = typer.Option("", help="comma-separated peer tickers (ingest them with --facts-only first)"),
+           price: float = typer.Option(None, help="share price to use (otherwise the latest stored price)")) -> None:
+    """Generate the multi-section equity research PDF."""
+    from finrobot import runs, service
+    run_id, emit = runs.new_run("report", {"ticker": ticker, "peers": peers}, _echo_event)
+    result = service.run_job(run_id, emit, lambda: service.execute_report(
+        run_id, emit, ticker, assumptions_file=assumptions, peers=[p.strip().upper() for p in peers.split(",") if p.strip()], price=price, flush=True))
+    if result is None:
+        raise typer.Exit(1)
+    typer.echo(f"report: {runs.run_dir(run_id) / result['pdf_name']}  ({result['pages']} pages)")
+    typer.echo(f"verification: {'PASS' if result['eval']['ok'] else 'FAIL'} · {result['eval']['claims']} figures in prose · format: {result['format']}")
 
 
 @app.command()
@@ -67,47 +115,6 @@ def ingest(ticker: str, tenk: int = typer.Option(1, help="10-K filings"), tenq: 
     """Download and index a company: XBRL financials, filings, earnings releases."""
     from finrobot.data.ingest import ingest as run
     run(ticker, 0 if facts_only else tenk, 0 if facts_only else tenq, 0 if facts_only else earnings, log=typer.echo)
-
-
-@app.command()
-def ask(question: str, ticker: str = typer.Option(None, "--ticker", "-t", help="skip company detection")) -> None:
-    """Ask an analyst-style question; Data, Concept and Thesis agents answer with cited figures."""
-    from finrobot import runs
-    from finrobot.graph.qa_graph import run_qa
-    run_id, emit = runs.new_run("qa", {"question": question, "ticker": ticker}, _echo_event)
-    try:
-        result, ctx = run_qa(question, ticker, emit)
-    except Exception as e:
-        runs.finish(run_id, "failed", {"error": str(e)})
-        typer.echo(f"error: {e}", err=True)
-        raise typer.Exit(1)
-    runs.save_artifacts(run_id, ctx.artifacts)
-    (runs.run_dir(run_id) / "answer.md").write_text(result["answer_md"])
-    runs.finish(run_id, "done", result)
-    typer.echo("\n" + result["answer_md"])
-    ev = result["eval"]
-    typer.echo(f"\n— verification: {'PASS' if ev['ok'] else 'FAIL'} · {ev['claims']} figures · {ev['matched_facts']} tied to data · "
-               f"{ev['grounded_in_passages']} grounded in documents · {result['seconds']}s · run {run_id}", err=True)
-
-
-@app.command()
-def report(ticker: str, assumptions: Path = typer.Option(None, help="YAML file overriding default projection assumptions"),
-           peers: str = typer.Option("", help="comma-separated peer tickers (ingest them with --facts-only first)"),
-           price: float = typer.Option(None, help="share price to use (otherwise the latest stored price)")) -> None:
-    """Generate the multi-section equity research PDF."""
-    from finrobot import runs
-    from finrobot.graph.report_graph import run_report
-    run_id, emit = runs.new_run("report", {"ticker": ticker, "peers": peers}, _echo_event)
-    try:
-        result = run_report(ticker, emit=emit, assumptions_file=assumptions, peers=[p.strip().upper() for p in peers.split(",") if p.strip()],
-                            price=price, run_id=run_id)
-    except Exception as e:
-        runs.finish(run_id, "failed", {"error": str(e)})
-        typer.echo(f"error: {e}", err=True)
-        raise typer.Exit(1)
-    runs.finish(run_id, "done", {k: v for k, v in result.items() if k != "factbook"})
-    typer.echo(f"report: {runs.run_dir(run_id) / result['pdf_name']}  ({result['pages']} pages)")
-    typer.echo(f"verification: {'PASS' if result['eval']['ok'] else 'FAIL'} · {result['eval']['claims']} figures in prose · format: {result['format']}")
 
 
 @app.command("set-price")
@@ -159,19 +166,24 @@ def companies() -> None:
 
 
 @app.command()
-def serve(port: int = 8010, host: str = "127.0.0.1") -> None:
-    """Run the API (FastAPI)."""
+def serve(port: int = 8010, host: str = typer.Option("127.0.0.1", envvar="FINROBOT_HOST", help="0.0.0.0 inside a container")) -> None:
+    """Run the API (FastAPI). Set FINROBOT_API_KEYS before binding to anything but localhost."""
     import uvicorn
-    uvicorn.run("finrobot.api.app:app", host=host, port=port)
+
+    from finrobot.config import settings
+    uvicorn.run("finrobot.api.app:app", host=host, port=port, log_config=None, proxy_headers=True, timeout_graceful_shutdown=30,
+                log_level=settings.log_level.lower())
 
 
 @app.command()
-def ui(port: int = 8510) -> None:
+def ui(port: int = 8510, host: str = typer.Option("127.0.0.1", envvar="FINROBOT_UI_HOST")) -> None:
     """Run the Streamlit UI (start the API first with `finrobot serve`)."""
     import subprocess
-    root = Path(__file__).resolve().parents[2]
-    sys.exit(subprocess.call([sys.executable, "-m", "streamlit", "run", str(root / "ui" / "app.py"), "--server.port", str(port),
-                              "--server.headless", "true", "--server.address", "127.0.0.1", "--browser.gatherUsageStats", "false"]))
+
+    from finrobot.ui import app as ui_app
+    cmd = [sys.executable, "-m", "streamlit", "run", str(Path(ui_app.__file__)), "--server.port", str(port),
+           "--server.headless", "true", "--server.address", host, "--browser.gatherUsageStats", "false"]
+    sys.exit(subprocess.call(cmd))  # noqa: S603 (fixed arguments, no user input)
 
 
 if __name__ == "__main__":

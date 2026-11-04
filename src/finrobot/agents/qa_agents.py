@@ -8,12 +8,14 @@ from __future__ import annotations
 import re
 import time
 
+from langchain_core.messages import HumanMessage, SystemMessage
+from pydantic import BaseModel
+
+from finrobot.agents.checked import NO_ANSWER, checked, covers_focus, sanitize  # noqa: F401  (re-exported for the section writers)
 from finrobot.agents.context import RunContext
-from finrobot.agents.evaluator import EvalReport, evaluate
 from finrobot.agents.function_agent import function_tools
 from finrobot.agents.grounding import grounding_check
 from finrobot.agents.math_agent import math_tools
-from finrobot.llm.client import Tool, parse_json, run_tools
 from finrobot.tools.metrics import period_label, shift
 from finrobot.tools.registry import data_tools, search_passages
 
@@ -25,10 +27,13 @@ RULES = """Rules you must follow:
 - If the data needed is not available, say so plainly instead of guessing.
 - Plain text, short bullet lines starting with "- ". No tables."""
 
-ROUTER_SCHEMA = {"type": "object", "properties": {
-    "company": {"type": "string"}, "data_question": {"type": "string"}, "concept_question": {"type": "string"},
-    "thesis_question": {"type": "string"}},
-    "required": ["company", "data_question", "concept_question", "thesis_question"]}
+
+class RouterOut(BaseModel):
+    # all required: without a `required` list in the JSON schema a model is free to omit fields (gpt-oss left `company` out)
+    company: str
+    data_question: str
+    concept_question: str
+    thesis_question: str
 
 _ORD = {"first": 1, "second": 2, "third": 3, "fourth": 4}
 
@@ -53,17 +58,16 @@ def parse_period(text: str) -> tuple[int | None, int | None]:
     return (int(y.group(1)) if y else None), quarter
 
 
-def route(ctx_llm, request: str, forced_ticker: str | None = None) -> dict:
+def route(llm, request: str, forced_ticker: str | None = None) -> dict:
     """Split the user's question into the three sub-questions of the chain-of-thought flow."""
     system = ("You split an equity-research question into three sub-questions for specialist agents. "
               "data_question: the factual numbers (actuals, comparison, versus consensus if mentioned). "
               "concept_question: why it happened, based on the figures. "
               "thesis_question: how best to tell the story given the company and industry. "
               "company is the company name or ticker as written in the question. Never add dates, years or quarters that the question does not contain.")
-    reply = ctx_llm.chat("figures", [{"role": "system", "content": system}, {"role": "user", "content": request}],
-                         schema=ROUTER_SCHEMA, temperature=0)
-    parsed = parse_json(reply.content) or {}
-    parsed.setdefault("company", forced_ticker or "")
+    out = llm.structured("figures", RouterOut, [SystemMessage(system), HumanMessage(request)], temperature=0)
+    parsed = out.model_dump() if out is not None else {}
+    parsed["company"] = parsed.get("company") or forced_ticker or ""
     years = lambda t: set(re.findall(r"(?:19|20)\d{2}", t or ""))
     for key, tmpl in (("data_question", "What are the key figures behind this question: {q}"),
                       ("concept_question", "Based on the figures, why did this happen: {q}"),
@@ -75,66 +79,6 @@ def route(ctx_llm, request: str, forced_ticker: str | None = None) -> dict:
         parsed["company"] = forced_ticker
     parsed["fiscal_year"], parsed["fiscal_quarter"] = parse_period(request)
     return parsed
-
-
-def _lines_with_issues(text: str, rep: EvalReport) -> set[str]:
-    return {i.where for i in rep.hard}
-
-
-def sanitize(text: str, rep: EvalReport) -> tuple[str, int]:
-    """Drop lines that still carry unsupported or uncited figures. Returns (clean text, lines removed)."""
-    bad = _lines_with_issues(text, rep)
-    kept, removed = [], 0
-    for line in text.splitlines():
-        if line.strip() in bad:
-            removed += 1
-        else:
-            kept.append(line)
-    return "\n".join(kept).strip(), removed
-
-
-def covers_focus(ctx: RunContext, text: str) -> bool:
-    """At least one fact cited in `text` is for the focus period (real figures for the wrong quarter pass the numeric check)."""
-    from finrobot.agents.evaluator import cites_in
-    return any(ctx.period in ctx.fb.facts[i].label for i in cites_in(text) if i in ctx.fb.facts)
-
-
-def checked(ctx: RunContext, role: str, system: str, user: str, tools: list[Tool], who: str, max_steps: int = 7,
-            must_cover_focus: bool = False) -> dict:
-    """Run a tool-using agent, evaluate its text, retry once with the issues, then strip anything still unverified."""
-    ctx.event("agent_start", agent=who)
-    t0 = time.time()
-    text, calls = run_tools(ctx.llm, role, system, user, tools, max_steps=max_steps, on_event=lambda e: ctx.emit({**e, "agent": who}))
-    rep = evaluate(text, ctx.fb)
-    retried = False
-    wrong_period = bool(text) and must_cover_focus and not covers_focus(ctx, text)
-    if text and (not rep.ok or wrong_period):
-        retried = True
-        problems = [str(i) for i in rep.hard]
-        if wrong_period:
-            problems.append(f"none of your cited figures is for the focus period {ctx.period}; use quarters_ago=0 for it")
-        ctx.event("retry", agent=who, issues=problems[:6])
-        feedback = ("Your previous answer failed verification:\n" + "\n".join(f"- {i}" for i in problems[:8]) +
-                    "\nRewrite it. Keep only figures that come from tool results, cite each with its id, and use calc/compute_metric "
-                    "for anything derived. Remove statements you cannot support.\n\nPrevious answer:\n" + text)
-        text2, calls2 = run_tools(ctx.llm, role, system, user + "\n\n" + feedback, tools, max_steps=max_steps,
-                                  on_event=lambda e: ctx.emit({**e, "agent": who}))
-        calls += calls2
-        if text2:
-            text, rep = text2, evaluate(text2, ctx.fb)
-            wrong_period = must_cover_focus and not covers_focus(ctx, text)
-    removed = 0
-    if not rep.ok:
-        text, removed = sanitize(text, rep)
-        rep = evaluate(text, ctx.fb)
-    if wrong_period:  # still about the wrong quarter after a retry: better no answer than a confident wrong one
-        ctx.event("agent_done", agent=who, tool_calls=len(calls), retried=True, removed=0, seconds=round(time.time() - t0, 1), **{"eval": rep.summary()})
-        return {"text": "_No verified answer could be produced for this part._", "eval": rep.summary(), "retried": True,
-                "removed": 0, "tool_calls": len(calls), "wrong_period": True}
-    ctx.event("agent_done", agent=who, tool_calls=len(calls), retried=retried, removed=removed, seconds=round(time.time() - t0, 1),
-              **{"eval": rep.summary()})
-    return {"text": text or "_No verified answer could be produced for this part._", "eval": rep.summary(),
-            "retried": retried, "removed": removed, "tool_calls": len(calls)}
 
 
 def _frame(ctx: RunContext, question: str) -> str:

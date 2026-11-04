@@ -6,7 +6,7 @@ from datetime import timedelta
 from finrobot.agents.context import RunContext
 from finrobot.data import store
 from finrobot.data.xbrl import CONCEPTS
-from finrobot.llm.client import Tool
+from finrobot.llm.tools import Tool
 from finrobot.tools.metrics import MissingData, period_label, shift
 
 METRICS = ", ".join(CONCEPTS)
@@ -19,7 +19,7 @@ def _row(f) -> dict:
 
 def search_passages(ctx: RunContext, query: str, doc_types: list[str] | None = None, k: int = 5, scope: str = "period") -> list[dict]:
     """Hybrid search; registers each hit as a passage (S#) in the FactBook. Scope 'period' = documents published for the focus quarter."""
-    emb = ctx.llm.embed([f"search_query: {query}"])[0]
+    emb = ctx.llm.embed([query], "query")[0]
     forms = [d for d in (doc_types or []) if d in DOC_TYPES] or None
     k = min(max(int(k), 1), 8)
     window = None

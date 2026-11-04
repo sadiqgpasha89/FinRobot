@@ -1,11 +1,11 @@
 [project]
 name = "finrobot"
-version = "0.1.0"
+version = "0.2.0"
 description = "Multi-agent equity research and valuation with LLMs"
 requires-python = ">=3.11"
 dependencies = [
   "httpx>=0.27",
-  "psycopg[binary]>=3.2",
+  "psycopg[binary,pool]>=3.2",
   "pgvector>=0.3",
   "minio>=7.2",
   "beautifulsoup4>=4.12",
@@ -15,7 +15,16 @@ dependencies = [
   "matplotlib>=3.8",
   "jinja2>=3.1",
   "weasyprint>=62",
-  "langgraph>=0.2",
+  "langchain>=1.0",
+  "langchain-core>=1.0",
+  "langchain-ollama>=1.0",
+  "langgraph>=1.0",
+  "langgraph-checkpoint-postgres>=3.0",
+  "langfuse>=3.0",
+  "langsmith>=0.4",
+  "pydantic-settings>=2.4",
+  "psycopg-pool>=3.2",
+  "prometheus-client>=0.20",
   "fastapi>=0.110",
   "uvicorn>=0.29",
   "streamlit>=1.35",
@@ -26,8 +35,13 @@ dependencies = [
   "markdown>=3.5",
 ]
 
+[project.optional-dependencies]
+# hosted model providers (the default is a local Ollama model): uv sync --extra anthropic
+anthropic = ["langchain-anthropic>=1.0"]
+openai = ["langchain-openai>=1.0"]
+
 [dependency-groups]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "pytest-cov>=5", "ruff>=0.6", "httpx>=0.27"]
 
 [project.scripts]
 finrobot = "finrobot.cli:app"
@@ -41,5 +55,30 @@ packages = ["src/finrobot"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-markers = ["integration: needs the docker compose stack (postgres, minio)", "live: needs Ollama and network access"]
-addopts = "-m 'not integration and not live'"
+markers = ["integration: needs a Postgres with pgvector (FINROBOT_TEST_DATABASE_URL)", "live: needs Ollama and network access"]
+addopts = "-m 'not integration and not live' -p no:cacheprovider"
+filterwarnings = ["ignore::DeprecationWarning:weasyprint.*", "ignore::DeprecationWarning:pydyf.*"]
+
+[tool.ruff]
+line-length = 150
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = [
+  "E501",   # long lines are allowed in prompts and tables
+  "S101",   # asserts are the point of tests
+  "B008",   # FastAPI Depends()/Query() in defaults
+  "UP037", "UP006", "UP007", "UP035", "UP045",   # `from __future__ import annotations` modules keep the explicit typing forms
+  "E731",   # short lambdas as local helpers are idiomatic here
+  "UP031",
+  "S608",   # SQL is assembled only from constants and bind parameters (reviewed in store.search_chunks)
+]
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S", "B"]
+"evals/**" = ["S"]
+
+[tool.coverage.run]
+source = ["src/finrobot"]
+omit = ["src/finrobot/ui/*"]

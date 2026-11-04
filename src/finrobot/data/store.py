@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import re
+import threading
 from contextlib import contextmanager
 from datetime import date
 from typing import Iterator
@@ -10,56 +11,61 @@ from typing import Iterator
 import psycopg
 from pgvector.psycopg import register_vector
 from psycopg.rows import dict_row
+from psycopg_pool import ConnectionPool
 
 from finrobot.config import settings
+from finrobot.data.migrations import migrate
 from finrobot.data.xbrl import FactRow
 
-SCHEMA = f"""
-CREATE EXTENSION IF NOT EXISTS vector;
-CREATE TABLE IF NOT EXISTS company(
-  ticker text PRIMARY KEY, cik bigint NOT NULL, name text, sector text, fiscal_year_end text);
-CREATE TABLE IF NOT EXISTS filing(
-  id serial PRIMARY KEY, ticker text NOT NULL REFERENCES company(ticker), form_type text NOT NULL,
-  accession text UNIQUE NOT NULL, filed date, period date, url text, object_key text);
-CREATE TABLE IF NOT EXISTS filing_chunk(
-  id serial PRIMARY KEY, filing_id int NOT NULL REFERENCES filing(id) ON DELETE CASCADE,
-  idx int NOT NULL, section text, text text NOT NULL, embedding vector({settings.embed_dim}),
-  tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', text)) STORED);
-CREATE INDEX IF NOT EXISTS chunk_tsv ON filing_chunk USING gin(tsv);
-CREATE INDEX IF NOT EXISTS chunk_filing ON filing_chunk(filing_id);
-CREATE TABLE IF NOT EXISTS financial_fact(
-  ticker text NOT NULL, metric text NOT NULL, period_end date NOT NULL, fiscal_year int, fiscal_q int NOT NULL,
-  value double precision NOT NULL, unit text, tag text, form text, filed date, accession text, derived boolean,
-  source_id text, PRIMARY KEY(ticker, metric, period_end, fiscal_q));
-CREATE TABLE IF NOT EXISTS consensus(
-  ticker text NOT NULL, metric text NOT NULL, fiscal_year int NOT NULL, fiscal_q int NOT NULL,
-  mean double precision NOT NULL, high double precision, low double precision, n_analysts int,
-  as_of date, source text, PRIMARY KEY(ticker, metric, fiscal_year, fiscal_q));
-CREATE TABLE IF NOT EXISTS price_daily(
-  ticker text NOT NULL, day date NOT NULL, close double precision NOT NULL, source text,
-  PRIMARY KEY(ticker, day));
-CREATE TABLE IF NOT EXISTS run(
-  id text PRIMARY KEY, mode text NOT NULL, request jsonb, status text NOT NULL, result jsonb,
-  events jsonb DEFAULT '[]'::jsonb, created_at timestamptz DEFAULT now(), updated_at timestamptz DEFAULT now());
-"""
+_pool: ConnectionPool | None = None
+_pool_lock = threading.Lock()
+
+
+def _configure(c: psycopg.Connection) -> None:
+    register_vector(c)
+
+
+def get_pool() -> ConnectionPool:
+    """One process-wide pool: a report makes hundreds of short queries and must not open a connection for each."""
+    global _pool
+    with _pool_lock:
+        if _pool is None:
+            _pool = ConnectionPool(settings.database_url, min_size=settings.db_pool_min, max_size=settings.db_pool_max,
+                                   kwargs={"row_factory": dict_row, "autocommit": True}, configure=_configure,
+                                   check=ConnectionPool.check_connection, timeout=15, open=False, name="finrobot")
+            _pool.open()
+        return _pool
+
+
+def close_pool() -> None:
+    global _pool
+    with _pool_lock:
+        if _pool is not None:
+            _pool.close()
+            _pool = None
 
 
 @contextmanager
 def conn() -> Iterator[psycopg.Connection]:
-    c = psycopg.connect(settings.database_url, row_factory=dict_row, autocommit=True)
-    try:
-        register_vector(c)
+    with get_pool().connection() as c:
         yield c
-    finally:
-        c.close()
 
 
 def init_db() -> None:
-    # the extension must exist before register_vector can look up its type
-    with psycopg.connect(settings.database_url, autocommit=True) as c:
-        c.execute("CREATE EXTENSION IF NOT EXISTS vector")
+    """Apply migrations (creates the vector extension first) and make sure the pool is usable."""
+    close_pool()
+    migrate()
     with conn() as c:
-        c.execute(SCHEMA)
+        c.execute("SELECT 1")
+
+
+def ping() -> bool:
+    try:
+        with conn() as c:
+            c.execute("SELECT 1")
+        return True
+    except Exception:
+        return False
 
 
 # --- companies / filings / chunks -----------------------------------------------------------
@@ -77,11 +83,14 @@ def get_company(ticker: str) -> dict | None:
 
 def find_company(text: str) -> dict | None:
     """Match an ingested company by ticker, or by (partial) name."""
-    t = text.strip()
+    t = (text or "").strip()
+    if len(t) < 2:   # '' would match every name and silently pick an arbitrary company
+        return None
+    like = "%" + t.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
     with conn() as c:
         r = c.execute("SELECT * FROM company WHERE upper(ticker)=upper(%s)", (t,)).fetchone()
         if r is None:
-            r = c.execute("SELECT * FROM company WHERE name ILIKE %s ORDER BY length(name) LIMIT 1", (f"%{t}%",)).fetchone()
+            r = c.execute("SELECT * FROM company WHERE name ILIKE %s ORDER BY length(name) LIMIT 1", (like,)).fetchone()
         return r
 
 
@@ -98,7 +107,8 @@ def filing_exists(accession: str) -> bool:
 def insert_filing(ticker: str, form: str, accession: str, filed: str, period: str, url: str, object_key: str,
                   chunks: list[tuple[int, str, str, list[float] | None]]) -> int:
     """chunks: (idx, section, text, embedding)."""
-    with conn() as c:
+    # one transaction: a filing row without its chunks would make `filing_exists` true and block a re-ingest forever
+    with conn() as c, c.transaction():
         fid = c.execute("""INSERT INTO filing(ticker,form_type,accession,filed,period,url,object_key)
                            VALUES(%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
                         (ticker, form, accession, filed or None, period or None, url, object_key)).fetchone()["id"]
@@ -163,7 +173,7 @@ def search_chunks(ticker: str, query_text: str, query_emb: list[float] | None, f
 
 # --- facts -----------------------------------------------------------------------------------
 def replace_facts(ticker: str, rows: list[FactRow]) -> int:
-    with conn() as c:
+    with conn() as c, c.transaction():   # all or nothing: a failed insert must not leave the company without facts
         c.execute("DELETE FROM financial_fact WHERE ticker=%s", (ticker,))
         with c.cursor() as cur:
             cur.executemany("""INSERT INTO financial_fact(ticker,metric,period_end,fiscal_year,fiscal_q,value,unit,tag,form,filed,
@@ -244,21 +254,53 @@ def get_consensus(ticker: str, metric: str, fy: int, fq: int) -> dict | None:
 
 
 # --- runs ------------------------------------------------------------------------------------
-def create_run(run_id: str, mode: str, request: dict) -> None:
+def create_run(run_id: str, mode: str, request: dict, trace_id: str | None = None) -> None:
     with conn() as c:
-        c.execute("INSERT INTO run(id,mode,request,status) VALUES(%s,%s,%s,'running')", (run_id, mode, json.dumps(request)))
+        c.execute("INSERT INTO run(id,mode,request,status,trace_id) VALUES(%s,%s,%s,'running',%s)",
+                  (run_id, mode, json.dumps(request, default=str), trace_id))
 
 
 def add_event(run_id: str, event: dict) -> None:
     with conn() as c:
-        c.execute("UPDATE run SET events = events || %s::jsonb, updated_at=now() WHERE id=%s", (json.dumps([event], default=str), run_id))
+        c.execute("INSERT INTO run_event(run_id, event) VALUES(%s,%s)", (run_id, json.dumps(event, default=str)))
 
 
-def finish_run(run_id: str, status: str, result: dict) -> None:
+def get_events(run_id: str, after: int = 0, limit: int = 2000) -> list[dict]:
+    """Events newer than `after` (an event id), oldest first; each carries its id as `_id` so a client can poll incrementally."""
     with conn() as c:
-        c.execute("UPDATE run SET status=%s, result=%s, updated_at=now() WHERE id=%s", (status, json.dumps(result, default=str), run_id))
+        rows = c.execute("SELECT id, event FROM run_event WHERE run_id=%s AND id>%s ORDER BY id LIMIT %s", (run_id, after, limit)).fetchall()
+    return [{**r["event"], "_id": r["id"]} for r in rows]
 
 
-def get_run(run_id: str) -> dict | None:
+def set_run_status(run_id: str, status: str) -> None:
     with conn() as c:
-        return c.execute("SELECT * FROM run WHERE id=%s", (run_id,)).fetchone()
+        c.execute("UPDATE run SET status=%s, updated_at=now() WHERE id=%s", (status, run_id))
+
+
+def finish_run(run_id: str, status: str, result: dict, usage: dict | None = None, error: str | None = None) -> None:
+    with conn() as c:
+        c.execute("UPDATE run SET status=%s, result=%s, usage=%s, error=%s, updated_at=now() WHERE id=%s",
+                  (status, json.dumps(result, default=str), json.dumps(usage, default=str) if usage is not None else None, error, run_id))
+
+
+def get_run(run_id: str, events_after: int = 0) -> dict | None:
+    with conn() as c:
+        r = c.execute("SELECT id, mode, request, status, result, usage, error, trace_id, created_at, updated_at FROM run WHERE id=%s",
+                      (run_id,)).fetchone()
+    if r is not None:
+        r["events"] = get_events(run_id, events_after)
+    return r
+
+
+def list_runs(limit: int = 50) -> list[dict]:
+    with conn() as c:
+        return c.execute("SELECT id, mode, status, request, error, created_at, updated_at FROM run ORDER BY created_at DESC LIMIT %s",
+                         (limit,)).fetchall()
+
+
+def mark_orphaned_runs() -> list[str]:
+    """Runs still 'running' when the service starts were killed with their worker thread. Report runs can resume from their checkpoint."""
+    with conn() as c:
+        rows = c.execute("UPDATE run SET status='interrupted', error='service restarted while the run was in progress', updated_at=now() "
+                         "WHERE status='running' RETURNING id").fetchall()
+    return [r["id"] for r in rows]
