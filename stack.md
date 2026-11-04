@@ -1,10 +1,5 @@
-# FinRobot — Build Plan
+# Stack
 
-> ## Build status (2026-11-02)
-> Phases 0–5 are built and were exercised against a real stack (Postgres+pgvector, S3-compatible store, Ollama with `gpt-oss:20b`, `gemma4:e4b`,
-> `nomic-embed-text`) on WM, RSG and WCN; the Streamlit UI was clicked through end to end. See [README.md](README.md) for usage.
-> Phase 6 is partial. Below, what differs from the plan below, and why.
->
 > | Plan | As built | Why |
 > |---|---|---|
 > | LLM: Claude API default, Ollama optional | **Ollama only** (`gpt-oss:20b` figures, `gemma4:e4b` prose) | the user's machine and models; a hosted-model class is a small addition behind `llm/client.py` |
