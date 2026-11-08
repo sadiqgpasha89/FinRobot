@@ -1,0 +1,70 @@
+site_name: FinRobot
+site_description: "Multi-agent equity research with verified, cited figures, built on LangGraph, LangChain, Langfuse and LangSmith."
+repo_url: https://github.com/sadiqgpasha89/FinRobot
+repo_name: sadiqgpasha89/FinRobot
+edit_uri: edit/main/docs/
+docs_dir: docs
+hooks: [mkdocs_hooks.py]
+# no site_url: every link is relative, so the same build works on GitLab Pages under /<project>/ and on a custom domain
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: lime
+      toggle: {icon: material/weather-night, name: Switch to dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: lime
+      toggle: {icon: material/weather-sunny, name: Switch to light mode}
+  features: [navigation.sections, navigation.top, navigation.footer, content.code.copy, content.action.edit, toc.follow, search.suggest]
+  icon: {repo: fontawesome/brands/github}
+
+nav:
+  - Home: index.md
+  - Design:
+      - Architecture: architecture.md
+      - System Design Review: sdr.md
+      - Decision records:
+          - Index: adr/README.md
+          - "0001 LangGraph orchestration": adr/0001-langgraph-orchestration.md
+          - "0002 Verification-first generation": adr/0002-verification-first-generation.md
+          - "0003 LangChain LLM gateway": adr/0003-langchain-llm-gateway.md
+          - "0004 Postgres as the single store": adr/0004-postgres-single-store.md
+          - "0005 Dual observability": adr/0005-dual-observability.md
+          - "0006 Durable state and human review": adr/0006-durable-state-and-human-review.md
+          - "0007 In-process job queue": adr/0007-in-process-job-queue.md
+          - "0008 Security posture": adr/0008-security-posture.md
+          - "0009 Local-first models": adr/0009-local-first-models.md
+  - Operate:
+      - Deployment runbook: deployment.md
+      - Observability: observability.md
+      - Development: development.md
+      - Publishing this site: gitlab-pages.md
+  - History:
+      - "0.2.0 audit": audit-0.2.0.md
+      - Medium article: medium/finrobot-medium-article.md
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - tables
+  - toc: {permalink: true}
+  - pymdownx.highlight: {anchor_linenums: true}
+  - pymdownx.inlinehilite
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/sadiqgpasha89/FinRobot

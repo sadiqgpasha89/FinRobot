@@ -1,7 +1,7 @@
 # Architecture
 
 FinRobot answers analyst questions and writes equity research reports whose every figure can be traced to a filing line or a calculation.
-This page describes the system as built in 0.2.0. The reasons behind the choices are in the [ADRs](adr/); the review of the whole design is
+This page describes the system as built in 0.2.0. The reasons behind the choices are in the [ADRs](adr/README.md); the review of the whole design is
 in the [System Design Review](sdr.md).
 
 ## 1. Design principle
