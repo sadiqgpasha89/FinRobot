@@ -1,0 +1,45 @@
+name: pages
+
+# Publishes https://sadiqgpasha89.github.io/FinRobot/ :
+#   /        the use-case landing page (landing/)
+#   /docs/   the MkDocs documentation site (docs/, mkdocs.yml)
+on:
+  push:
+    branches: [main]
+    paths: [landing/**, docs/**, mkdocs.yml, mkdocs_hooks.py, requirements-docs.txt, .github/workflows/pages.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12", cache: pip, cache-dependency-path: requirements-docs.txt}
+      - run: pip install -r requirements-docs.txt
+      - name: Build documentation into /docs
+        env: {NO_MKDOCS_2_WARNING: "1"}
+        run: mkdocs build --strict --site-dir _site/docs
+      - name: Add landing page
+        run: cp -r landing/. _site/ && touch _site/.nojekyll
+      - uses: actions/upload-pages-artifact@v3
+        with: {path: _site}
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -1,5 +1,7 @@
 # FinRobot
 
+**Live site and use case: <https://sadiqgpasha89.github.io/FinRobot/>** · [Documentation](https://sadiqgpasha89.github.io/FinRobot/docs/)
+
 Multi-agent equity research with **verified, cited figures**. Give it a ticker: it ingests SEC filings and XBRL financials, answers analyst questions
 ("why did EBITDA move?") with every number tied to a source, and writes an 8-section equity research PDF with tables, charts, a DCF and a
 verification appendix.
@@ -13,7 +15,8 @@ Built on **LangGraph** (orchestration, durable state, human review), **LangChain
 | Design | [Architecture](docs/architecture.md) · [System Design Review](docs/sdr.md) · [Architecture Decision Records](docs/adr/) |
 | Operate | [Deployment runbook](docs/deployment.md) · [Observability](docs/observability.md) · [Development](docs/development.md) |
 | History | [0.2.0 audit: bugs found and fixed](docs/audit-0.2.0.md) · [original build plan](plan.md) · [Medium article](docs/medium/finrobot-medium-article.md) |
-| Docs site | built with MkDocs and published to GitLab Pages by `.gitlab-ci.yml`: [how to set it up](docs/gitlab-pages.md) · preview locally with `pip install -r requirements-docs.txt && mkdocs serve` |
+| Live site | [use-case page](https://sadiqgpasha89.github.io/FinRobot/) and [docs](https://sadiqgpasha89.github.io/FinRobot/docs/), published to GitHub Pages by `.github/workflows/pages.yml` (landing page source in `landing/`) |
+| Docs site | built with MkDocs; also publishable to GitLab Pages by `.gitlab-ci.yml`: [how to set it up](docs/gitlab-pages.md) · preview locally with `pip install -r requirements-docs.txt && mkdocs serve` |
 
 ## Quick start (Docker)
 

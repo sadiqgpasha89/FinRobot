@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FinRobot – verified equity research with AI agents</title>
+<meta name="description" content="FinRobot is a multi-agent system that answers analyst questions and writes equity research reports where every figure is tied to an SEC filing and verified by code.">
+<style>
+  :root {
+    --bg: #ffffff; --surface: #f4f7f8; --text: #14202b; --muted: #55666f; --line: #dde5e8;
+    --brand: #0e8f97; --brand-strong: #0a6b72; --accent: #7aa21a; --warn-bg: #fff6e0; --warn-line: #e6c46a;
+    --code-bg: #0f1c24; --code-text: #d7eef0;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0d151b; --surface: #15212a; --text: #e6eef1; --muted: #9db0b8; --line: #263540;
+      --brand: #3cc3cb; --brand-strong: #6fdbe1; --accent: #a5cf45; --warn-bg: #2a2412; --warn-line: #6b5a1f;
+      --code-bg: #091016; --code-text: #cfe9ec;
+    }
+  }
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  a { color: var(--brand-strong); }
+  .wrap { max-width: 1040px; margin: 0 auto; padding: 0 16px; }
+  header.top { border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); z-index: 5; }
+  header.top .wrap { display: flex; align-items: center; justify-content: space-between; gap: 16px; height: 56px; }
+  .logo { font-weight: 800; font-size: 1.25rem; letter-spacing: -.02em; text-decoration: none; color: var(--text); }
+  .logo span { color: var(--brand); }
+  nav a { margin-left: 18px; text-decoration: none; color: var(--muted); font-size: .95rem; }
+  nav a:hover { color: var(--text); }
+  @media (max-width: 640px) { nav .hide-sm { display: none; } }
+  .hero { padding: 64px 0 40px; text-align: center; }
+  .hero h1 { font-size: clamp(2rem, 5vw, 3.2rem); line-height: 1.12; margin: 0 0 16px; letter-spacing: -.03em; }
+  .hero h1 em { font-style: normal; color: var(--brand); }
+  .hero p.lead { font-size: 1.15rem; color: var(--muted); max-width: 720px; margin: 0 auto 28px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; }
+  .btn { display: inline-block; padding: 11px 20px; border-radius: 8px; font-weight: 600; text-decoration: none; border: 1px solid var(--brand); }
+  .btn.primary { background: var(--brand); color: #fff; }
+  @media (prefers-color-scheme: dark) { .btn.primary { color: #06232a; } }
+  .btn.ghost { color: var(--brand-strong); }
+  .btn:hover { filter: brightness(1.08); }
+  section { padding: 48px 0; }
+  section.alt { background: var(--surface); }
+  h2 { font-size: 1.7rem; letter-spacing: -.02em; margin: 0 0 8px; }
+  .sub { color: var(--muted); margin: 0 0 28px; max-width: 760px; }
+  .grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); }
+  .card { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 20px; }
+  section.alt .card { background: var(--bg); }
+  .card h3 { margin: 0 0 6px; font-size: 1.05rem; }
+  .card p { margin: 0; color: var(--muted); font-size: .96rem; }
+  .tag { display: inline-block; font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); margin-bottom: 6px; }
+  .demo { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+  .demo .row { padding: 18px 20px; border-top: 1px solid var(--line); }
+  .demo .row:first-child { border-top: 0; }
+  .demo .label { font-size: .75rem; font-weight: 700; text-transform: uppercase; letter-spacing: .06em; color: var(--brand-strong); margin-bottom: 4px; }
+  .demo .q { font-size: 1.1rem; font-weight: 600; }
+  .demo .cite { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .8rem; background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; white-space: nowrap; }
+  .steps { counter-reset: s; display: grid; gap: 14px; padding: 0; margin: 0; list-style: none; }
+  .steps li { counter-increment: s; position: relative; padding: 4px 0 4px 52px; }
+  .steps li::before { content: counter(s); position: absolute; left: 0; top: 0; width: 36px; height: 36px; border-radius: 50%; background: var(--brand); color: #fff; display: grid; place-items: center; font-weight: 700; }
+  @media (prefers-color-scheme: dark) { .steps li::before { color: #06232a; } }
+  .steps b { display: block; }
+  .steps span { color: var(--muted); }
+  figure { margin: 0; }
+  figure img { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 12px; background: #fff; display: block; }
+  figcaption { color: var(--muted); font-size: .9rem; margin-top: 8px; }
+  .two { display: grid; gap: 28px; grid-template-columns: 1fr 1fr; align-items: start; }
+  @media (max-width: 800px) { .two { grid-template-columns: 1fr; } }
+  table { width: 100%; border-collapse: collapse; font-size: .95rem; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: .85rem; text-transform: uppercase; letter-spacing: .04em; }
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+  .tablewrap td:first-child { font-weight: 600; }
+  pre { background: var(--code-bg); color: var(--code-text); padding: 16px; border-radius: 10px; overflow-x: auto; font-size: .85rem; line-height: 1.5; margin: 0; }
+  .note { background: var(--warn-bg); border: 1px solid var(--warn-line); border-radius: 10px; padding: 14px 16px; font-size: .92rem; }
+  footer { border-top: 1px solid var(--line); padding: 28px 0 40px; color: var(--muted); font-size: .9rem; }
+  footer a { color: var(--muted); }
+  :focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+</style>
+</head>
+<body>
+
+<header class="top">
+  <div class="wrap">
+    <a class="logo" href="#top">Fin<span>Robot</span></a>
+    <nav>
+      <a class="hide-sm" href="#usecase">Use case</a>
+      <a class="hide-sm" href="#how">How it works</a>
+      <a class="hide-sm" href="#trust">Trust</a>
+      <a href="docs/">Docs</a>
+      <a href="https://github.com/sadiqgpasha89/FinRobot">GitHub</a>
+    </nav>
+  </div>
+</header>
+
+<main id="top">
+<div class="wrap hero">
+  <h1>Equity research where <em>every number</em> is traced to a source</h1>
+  <p class="lead">Give FinRobot a ticker. It reads SEC filings, answers analyst questions like “why did EBITDA move?” with cited, verified figures, and writes an 8-section research PDF with tables, charts and a DCF.</p>
+  <div class="btns">
+    <a class="btn primary" href="#usecase">See the use case</a>
+    <a class="btn ghost" href="docs/">Read the documentation</a>
+    <a class="btn ghost" href="https://github.com/sadiqgpasha89/FinRobot">View source on GitHub</a>
+  </div>
+</div>
+
+<section class="alt" id="usecase">
+  <div class="wrap">
+    <h2>The use case: from filings to a defensible answer</h2>
+    <p class="sub">An analyst notices a miss in a quarterly result and needs to know why, fast, and needs to be able to defend every figure in the answer. This is the example FinRobot is built around.</p>
+    <div class="demo">
+      <div class="row"><div class="label">Analyst asks</div><div class="q">“Waste Management missed Q2 EBITDA. What are the reasons for that?”</div></div>
+      <div class="row"><div class="label">Data-CoT agent · the numbers</div>
+        Pulls the quarter’s EBITDA and the comparison from XBRL facts. Arithmetic is done by code, not by the model, and each figure is registered with an id
+        <span class="cite">F12</span>.</div>
+      <div class="row"><div class="label">Concept-CoT agent · the causes</div>
+        Searches the 10-Q and the earnings release for drivers (cost pressure, commodity prices, volumes, acquisitions) and cites the passages
+        <span class="cite">S3</span>.</div>
+      <div class="row"><div class="label">Thesis-CoT agent · the story</div>
+        Turns the facts and causes into a short narrative of what happened and what to watch, with a grounding check on qualitative claims.</div>
+      <div class="row"><div class="label">Verified answer</div>
+        A merged answer in which each number matches a registered fact or a cited passage. Anything that cannot be verified is <b>removed</b>, not hedged.</div>
+    </div>
+  </div>
+</section>
+
+<section id="who">
+  <div class="wrap">
+    <h2>Who it is for</h2>
+    <p class="sub">People who need LLM speed on financial documents without LLM-style confident errors.</p>
+    <div class="grid">
+      <div class="card"><span class="tag">Question mode</span><h3>Equity &amp; credit analysts</h3><p>Ask why a metric moved and get cited figures, comparisons against consensus (when on file) and drivers from the filings.</p></div>
+      <div class="card"><span class="tag">Report mode</span><h3>Research teams</h3><p>Generate a first-draft, 8-section equity research PDF with a DCF, charts and a verification appendix, then edit the assumptions and re-run.</p></div>
+      <div class="card"><span class="tag">Engineering</span><h3>AI / platform engineers</h3><p>A reference build of verification-first agents on LangGraph and LangChain, with Langfuse and LangSmith observability, ADRs and a runbook.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="how">
+  <div class="wrap">
+    <h2>How it works</h2>
+    <p class="sub">The model reads and writes. Code does arithmetic, chooses periods, and checks every number.</p>
+    <div class="two">
+      <ol class="steps">
+        <li><b>Ingest</b><span>SEC EDGAR 10-K, 10-Q and earnings releases plus XBRL financials, stored in Postgres with pgvector.</span></li>
+        <li><b>Route</b><span>Code parses the ticker and fiscal period from the question and splits it into sub-questions.</span></li>
+        <li><b>Draft with tools</b><span>Each agent runs a tool loop; figures come only from registered facts and metric tools.</span></li>
+        <li><b>Verify → retry → sanitize</b><span>A deterministic evaluator checks each number and period label. One repair attempt, then unverifiable lines are deleted.</span></li>
+        <li><b>Report</b><span>For reports, a human can review valuation assumptions before the tables, charts, DCF and PDF are produced.</span></li>
+      </ol>
+      <figure>
+        <img src="assets/finrobot-multi-agent.png" alt="Diagram: a question about a Waste Management EBITDA miss is split across Data-CoT, Concept-CoT and Thesis-CoT agents, then merged into one answer" loading="lazy">
+        <figcaption>Multi-agent chain-of-thought: three agents answer one analyst question.</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<section id="layers">
+  <div class="wrap">
+    <h2>The layered design</h2>
+    <p class="sub">Source data at the bottom, financial concepts in the middle, the research report template on top.</p>
+    <figure>
+      <img src="assets/finrobot-layers.png" alt="FinRobot layer diagram: data processing layer, Fin-Concept layer and equity research template layer" loading="lazy">
+    </figure>
+  </div>
+</section>
+
+<section class="alt" id="trust">
+  <div class="wrap">
+    <h2>Why you can trust the output</h2>
+    <p class="sub">LLMs state wrong numbers fluently. FinRobot is built to fail closed.</p>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Guard</th><th>What it prevents</th></tr></thead>
+      <tbody>
+        <tr><td>Every number is registered under an id and must be cited</td><td>Uncited figures</td></tr>
+        <tr><td>Code does all arithmetic; units are inferred, not chosen by the model</td><td>Mislabelled units, hand-typed numbers</td></tr>
+        <tr><td>Facts carry a period basis; invalid period mixes are rejected</td><td>11.0x leverage instead of 2.93x</td></tr>
+        <tr><td>Fiscal period parsed in code, not by the model</td><td>An invented “FY2024”</td></tr>
+        <tr><td>Deterministic evaluator + one retry + removal of the unverifiable</td><td>Confident wrong answers</td></tr>
+        <tr><td>Grounding check on qualitative claims; escaped model text; PDF renderer cannot fetch URLs</td><td>Unsupported claims, injected markup, SSRF</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<section id="stack">
+  <div class="wrap">
+    <h2>Built with</h2>
+    <div class="grid">
+      <div class="card"><h3>LangGraph</h3><p>Question and report workflows, durable state and human review.</p></div>
+      <div class="card"><h3>LangChain</h3><p>One gateway for chat and embedding models, chosen per role.</p></div>
+      <div class="card"><h3>Langfuse &amp; LangSmith</h3><p>Traces, per-run quality scores and golden-set experiments.</p></div>
+      <div class="card"><h3>Postgres + pgvector</h3><p>Facts, filing chunks, run records and graph checkpoints.</p></div>
+      <div class="card"><h3>Ollama (local-first)</h3><p>Runs on one 16&nbsp;GB GPU; hosted models are a one-line config change.</p></div>
+      <div class="card"><h3>FastAPI &amp; Streamlit</h3><p>An API with auth and metrics, plus a UI and a CLI.</p></div>
+    </div>
+  </div>
+</section>
+
+<section class="alt" id="try">
+  <div class="wrap">
+    <h2>Try it</h2>
+    <p class="sub">Docker is the quickest route. Full steps, including local development and models, are in the README and the deployment runbook.</p>
+    <pre><code>cp .env.example .env     # set SEC_USER_AGENT and replace every change-me-* secret
+docker compose up -d --build
+docker compose exec api finrobot ingest WM
+docker compose exec api finrobot ask "How did WM EBITDA change in Q3 versus a year ago, and what drove it?"</code></pre>
+    <div class="btns" style="margin-top:24px;justify-content:flex-start">
+      <a class="btn primary" href="docs/">Documentation</a>
+      <a class="btn ghost" href="docs/architecture/">Architecture</a>
+      <a class="btn ghost" href="docs/sdr/">System design review</a>
+      <a class="btn ghost" href="https://github.com/sadiqgpasha89/FinRobot#quick-start-docker">Quick start</a>
+    </div>
+    <p class="note" style="margin-top:28px"><b>Not financial advice.</b> FinRobot produces research aids from public filings under stated assumptions. It makes no recommendation to buy or sell any security. Only US SEC registrants are supported.</p>
+  </div>
+</section>
+</main>
+
+<footer>
+  <div class="wrap">FinRobot · <a href="https://github.com/sadiqgpasha89/FinRobot">GitHub repository</a> · <a href="docs/">Documentation</a></div>
+</footer>
+
+</body>
+</html>
