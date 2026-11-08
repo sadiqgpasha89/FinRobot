@@ -1,7 +1,7 @@
 # System Design Review — FinRobot 0.2.0
 
 > **SDR** is used here to mean *System Design Review*: the single document a reviewer reads to decide whether the design is fit to deploy. The
-> reasoning behind individual choices is in the [ADRs](adr/); the structure is in [architecture.md](architecture.md); operating it is in
+> reasoning behind individual choices is in the [ADRs](adr/README.md); the structure is in [architecture.md](architecture.md); operating it is in
 > [deployment.md](deployment.md).
 
 | | |
@@ -167,7 +167,7 @@ sequenceDiagram
 REST, JSON, one resource family (`runs`). Writes that take time return `202` with a run id; reads are cheap and cursor-based
 (`GET /runs/{id}?after=<event id>`). Error model: `401` missing/invalid key, `404` unknown company or run, `409` wrong run state, `422` invalid input (before any
 work), `429` queue full (+ `Retry-After`), `503` from `/ready` when a dependency is down. Every response carries `x-request-id`. The full endpoint list is in the
-[README](../README.md#api); OpenAPI is served at `/docs`.
+[README](https://github.com/sadiqgpasha89/FinRobot#api); OpenAPI is served at `/docs`.
 
 ## 7. Data design
 

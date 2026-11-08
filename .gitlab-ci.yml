@@ -1,0 +1,50 @@
+# GitLab Pages for FinRobot: builds the MkDocs site in this repository and publishes it.
+#
+# Two ways to use it (details in docs/gitlab-pages.md):
+#   A. The GitLab project contains the repository (imported or mirrored from GitHub): the site is built from the checkout.
+#   B. The GitLab project contains only this file: each build clones the GitHub repository and builds that.
+# Site URL: https://<namespace>.gitlab.io/<project>/   (shown under Deploy > Pages)
+
+stages: [build, deploy]
+
+variables:
+  GITHUB_REPO_URL: "https://github.com/sadiqgpasha89/FinRobot.git"   # used only in mode B
+  GITHUB_REF: "main"                                                   # branch or tag to build in mode B
+  NO_MKDOCS_2_WARNING: "1"
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+
+default:
+  image: python:3.12   # the full image includes git, needed by mode B
+  cache:
+    key: docs-pip
+    paths: [.cache/pip]
+
+.build_site:
+  script:
+    - |
+      if [ ! -f mkdocs.yml ]; then
+        echo "mkdocs.yml not found in this project: cloning ${GITHUB_REPO_URL} (${GITHUB_REF})"
+        git clone --depth 1 --branch "${GITHUB_REF}" "${GITHUB_REPO_URL}" _source
+        cd _source
+      fi
+    - pip install --quiet -r requirements-docs.txt
+    - mkdocs build --strict --site-dir "${CI_PROJECT_DIR}/public"
+
+# Every pipeline that is not a deploy checks that the site builds (--strict fails on broken links and bad config).
+docs:check:
+  extends: .build_site
+  stage: build
+  rules:
+    - if: $CI_COMMIT_BRANCH && $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+# Publishes the site. In mode B, add a pipeline schedule (CI/CD > Schedules) so the site follows the GitHub repository.
+pages:
+  extends: .build_site
+  stage: deploy
+  artifacts:
+    paths: [public]
+    expire_in: 30 days
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == "schedule" || $CI_PIPELINE_SOURCE == "trigger" || $CI_PIPELINE_SOURCE == "web"

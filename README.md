@@ -13,6 +13,7 @@ Built on **LangGraph** (orchestration, durable state, human review), **LangChain
 | Design | [Architecture](docs/architecture.md) · [System Design Review](docs/sdr.md) · [Architecture Decision Records](docs/adr/) |
 | Operate | [Deployment runbook](docs/deployment.md) · [Observability](docs/observability.md) · [Development](docs/development.md) |
 | History | [0.2.0 audit: bugs found and fixed](docs/audit-0.2.0.md) · [original build plan](plan.md) · [Medium article](docs/medium/finrobot-medium-article.md) |
+| Docs site | built with MkDocs and published to GitLab Pages by `.gitlab-ci.yml`: [how to set it up](docs/gitlab-pages.md) · preview locally with `pip install -r requirements-docs.txt && mkdocs serve` |
 
 ## Quick start (Docker)
 

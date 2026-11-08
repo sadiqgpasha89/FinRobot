@@ -13,3 +13,7 @@ models/
 .ruff_cache/
 .mypy_cache/
 .coverage
+
+# built documentation site
+/public/
+/site/
